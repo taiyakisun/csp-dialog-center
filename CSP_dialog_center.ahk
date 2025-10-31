@@ -2,7 +2,7 @@
 #SingleInstance Off
 Persistent(True)
 
-DEBUG_MODE := true
+DEBUG_MODE := false
 LOG_FILE := A_ScriptDir "\CSP_dialog_center_debug.log"
 
 if DEBUG_MODE
