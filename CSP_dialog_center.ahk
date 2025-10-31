@@ -355,7 +355,7 @@ IsDialogCandidate(hwnd, main, dialogRect := 0, style := "")
         return false
     }
 
-    // ウィンドウ属性（スタイル）が取得できなければ返る
+    ; ウィンドウ属性（スタイル）が取得できなければ返る
     if (style = "")
     {
         try style := WinGetStyle("ahk_id " hwnd)
@@ -366,7 +366,7 @@ IsDialogCandidate(hwnd, main, dialogRect := 0, style := "")
         }
     }
 
-    // タイトルバーがついていないウィンドウは対象外（メニューバーのコンテキストメニューなど）
+    ; タイトルバーがついていないウィンドウは対象外（メニューバーのコンテキストメニューなど）
     if !(style & 0x00C00000) ; WS_CAPTION
     {
         DebugLog("Candidate lacks caption/title bar; excluded.")
@@ -390,14 +390,14 @@ IsDialogCandidate(hwnd, main, dialogRect := 0, style := "")
         }
     }
 
-    // サイズが正常に取得できない場合は対象外
+    ; サイズが正常に取得できない場合は対象外
     if (w <= 0 || h <= 0)
     {
         DebugLog(Format("Invalid window dimensions. w={} h={}", w, h))
         return false
     }
 
-    // 面積計算できなければ（メインウィンドウも含め）対象外
+    ; 面積計算できなければ（メインウィンドウも含め）対象外
     area := w * h
     if (area <= 0 || main.area <= 0)
     {
@@ -405,7 +405,7 @@ IsDialogCandidate(hwnd, main, dialogRect := 0, style := "")
         return false
     }
 
-    // ダイアログが最小化されていたら対象外
+    ; ダイアログが最小化されていたら対象外
     try subState := WinGetMinMax("ahk_id " hwnd)
     catch error
     {
@@ -418,7 +418,7 @@ IsDialogCandidate(hwnd, main, dialogRect := 0, style := "")
         return false
     }
 
-    // メインウィンドウと比較して大きければ対象外
+    ; メインウィンドウと比較して大きければ対象外
     ratio := area / main.area
     if (ratio >= DIALOG_RATIO_LIMIT)
     {
