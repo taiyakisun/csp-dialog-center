@@ -2,7 +2,7 @@
 #SingleInstance Off
 Persistent(True)
 
-DEBUG_MODE := false
+DEBUG_MODE := true
 LOG_FILE := A_ScriptDir "\CSP_dialog_center_debug.log"
 
 if DEBUG_MODE
@@ -15,7 +15,6 @@ DIALOG_RATIO_LIMIT := 0.9
 MAX_MOVE_ATTEMPTS := 10
 MIN_MAIN_DIMENSION := 240
 MIN_DIALOG_DIMENSION := 80
-MIN_DIALOG_DURATION := 80
 
 gShellHookGui := 0
 gShellHookMsg := 0
@@ -135,6 +134,13 @@ ScheduleRelocate(hwnd)
     ; gPendingRelocateが現在時刻、gKnownWindowsがここまでは再スキャン不要との時刻を示す
     global gPendingRelocate, gKnownWindows
 
+    ; メインウィンドウなら何もせず帰る
+    if IsMainCspWindow(hwnd)
+    {
+        DebugLog(Format("Main window detected (0x{:X}); skipping scheduling.", hwnd))
+        return
+    }
+
     ; そのウィンドウが「移動対象として扱ってよい」ものかをチェック。メニュー類など除外対象ならここで帰る
     if !IsWindowEligible(hwnd)
     {
@@ -168,6 +174,13 @@ ScheduleRelocate(hwnd)
 ; 初期化処理のOnMessageで登録したので、"SHELLHOOK"メッセージがシステムから届くたびにコールバックされる
 ShellMessage(wParam, lParam, msg, hwnd)
 {
+    targetHwnd := lParam  ; lParamに通知対象のウィンドウハンドルが入っている
+    if (targetHwnd && IsMainCspWindow(targetHwnd))
+    {
+        DebugLog(Format("Shell event targeted main window (0x{:X}); ignoring.", targetHwnd))
+        return
+    }
+
     ; 対象のイベントかどうかを確認。Mapにしてるのはhandled.Has(wParam)と調べられるようにするため。
     ; 1 → HSHELL_WINDOWCREATED = ウィンドウが生成された
     ; 4 → HSHELL_WINDOWACTIVATED = ウィンドウがアクティブになった
@@ -182,7 +195,6 @@ ShellMessage(wParam, lParam, msg, hwnd)
         return
     }
 
-    targetHwnd := lParam  ; lParamに通知対象のウィンドウハンドルが入っている
     DebugLog(Format("Shell event received. event={} (0x{:X}) hwnd=0x{:X}", ShellEventName(wParam), wParam, targetHwnd))
     if !IsWindow(targetHwnd)
     {
@@ -223,6 +235,13 @@ TryRelocateWindow(hwnd, attempt := 1)
         {
             gKnownWindows.Delete(hwnd)
         }
+        return
+    }
+
+    if IsMainCspWindow(hwnd)
+    {
+        DebugLog("Main window detected during relocation; skipping.")
+        DeferWindowRetry(hwnd, 2000)
         return
     }
 
@@ -489,62 +508,104 @@ AttemptWindowMove(hwnd, x, y)
     return false
 }
 
-GetMainWindowInfo()
+GetMainWindowInfo(log := true)
 {
     global MIN_MAIN_DIMENSION
     handles := WinGetList()
     maxArea := 0
     main := 0
-    DebugLog(Format("Searching for main window. candidates={}", handles.Length))
+    if log
+    {
+        DebugLog(Format("Searching for main window. candidates={}", handles.Length))
+    }
+
     for hwnd in handles
     {
-        if !IsCSPWindow(hwnd, &processName)
+        if !IsCSPWindow(hwnd)
+        {
             continue
+        }
+
         try style := WinGetStyle("ahk_id " hwnd)
         catch error
         {
-            DebugLog(Format("Failed to get style. hwnd=0x{:X} err={}", hwnd, ErrorText(error)))
+            if log
+            {
+                DebugLog(Format("Failed to get style. hwnd=0x{:X} err={}", hwnd, ErrorText(error)))
+            }
             continue
         }
-        if (style & 0x40000000)  ; WS_CHILD
+
+        if (style & 0x40000000)
         {
-            DebugLog(Format("Skipping child window. hwnd=0x{:X}", hwnd))
+            if log
+            {
+                DebugLog(Format("Skipping child window. hwnd=0x{:X}", hwnd))
+            }
             continue
         }
+
         try state := WinGetMinMax("ahk_id " hwnd)
         catch error
         {
-            DebugLog(Format("Failed to get MinMax. hwnd=0x{:X} err={}", hwnd, ErrorText(error)))
+            if log
+            {
+                DebugLog(Format("Failed to get MinMax. hwnd=0x{:X} err={}", hwnd, ErrorText(error)))
+            }
             continue
         }
+
         if (state = -1)
         {
-            DebugLog(Format("Skipping minimized window. hwnd=0x{:X}", hwnd))
+            if log
+            {
+                DebugLog(Format("Skipping minimized window. hwnd=0x{:X}", hwnd))
+            }
             continue
         }
-        try {
+
+        try
+        {
             WinGetPos(&x, &y, &w, &h, "ahk_id " hwnd)
-        } catch {
-            DebugLog(Format("Failed to get window position. hwnd=0x{:X}", hwnd))
+        } 
+        catch
+        {
+            if log
+            {
+                DebugLog(Format("Failed to get window position. hwnd=0x{:X}", hwnd))
+            }
             continue
         }
+
         if (w < MIN_MAIN_DIMENSION || h < MIN_MAIN_DIMENSION)
         {
-            DebugLog(Format("Window too small. hwnd=0x{:X} size={}x{}", hwnd, w, h))
+            if log
+                DebugLog(Format("Window too small. hwnd=0x{:X} size={}x{}", hwnd, w, h))
             continue
         }
+
         area := w * h
         if (area > maxArea)
         {
             maxArea := area
             main := { hwnd: hwnd, x: x, y: y, w: w, h: h, area: area, state: state }
-            DebugLog(Format("Main window candidate updated. hwnd=0x{:X} area={} size={}x{}", hwnd, area, w, h))
+            if log
+                DebugLog(Format("Main window candidate updated. hwnd=0x{:X} area={} size={}x{}", hwnd, area, w, h))
         }
     }
+
     if IsObject(main)
-        DebugLog(Format("Main window selected. hwnd=0x{:X} size={}x{}", main.hwnd, main.w, main.h))
-    else
+    {
+        if log
+        {
+            DebugLog(Format("Main window selected. hwnd=0x{:X} size={}x{}", main.hwnd, main.w, main.h))
+        }
+    }
+    else if log
+    {
         DebugLog("No main window found.")
+    }
+    
     return main
 }
 
@@ -560,6 +621,16 @@ IsCSPWindow(hwnd, &processName := "")
     if result
         DebugLog(Format("CSP window confirmed. hwnd=0x{:X}", hwnd))
     return result
+}
+
+IsMainCspWindow(hwnd)
+{
+    if !IsCSPWindow(hwnd)
+    {
+        return false
+    }
+    main := GetMainWindowInfo(DEBUG_MODE)
+    return (IsObject(main) && main.hwnd = hwnd)
 }
 
 IsWindow(hwnd)
@@ -798,6 +869,11 @@ ScanForDialogs()
     {
         if !IsWindow(hwnd)
             continue
+        if IsMainCspWindow(hwnd)
+        {
+            DebugLog(Format("Watchdog detected main window (0x{:X}); skipping.", hwnd))
+            continue
+        }
         if gPendingRelocate.Has(hwnd)
             continue
         if gKnownWindows.Has(hwnd) && (now < gKnownWindows[hwnd])
@@ -817,6 +893,7 @@ ScanForDialogs()
             gKnownWindows.Delete(hwnd)
     }
 }
+
 IsWindowEligible(hwnd, class := "")
 {
     global TARGET_PROCESS, MIN_DIALOG_DIMENSION
