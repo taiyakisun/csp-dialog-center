@@ -623,14 +623,110 @@ IsCSPWindow(hwnd, &processName := "")
     return result
 }
 
+GetLayeredAlpha(hwnd)
+{
+    alpha := 255
+    has := 0
+    ; BOOL GetLayeredWindowAttributes(HWND, COLORREF*, BYTE*, DWORD*)
+    if DllCall("GetLayeredWindowAttributes"
+        , "ptr", hwnd, "uint*", 0, "uchar*", &alpha, "uint*", &has) {
+        ; alpha は 0..255。取得できなければ 255 のまま
+    }
+    return alpha
+}
+
 IsMainCspWindow(hwnd)
 {
+    ; ウィンドウが存在しなければ対象外
+    ;if !WinExist("ahk_id " hwnd)
+    ;{
+    ;    return false
+    ;}
+
+    ; ウィンドウの存在とプロセス名の一致を確認する
     if !IsCSPWindow(hwnd)
     {
         return false
     }
-    main := GetMainWindowInfo(DEBUG_MODE)
-    return (IsObject(main) && main.hwnd = hwnd)
+
+    ; タイトルバーの文字列に「CLIP STUDIO PAINT」が含まれるかどうか調べる
+    title := WinGetTitle("ahk_id " hwnd)
+    ; 例: ローカライズを考慮しつつ基本は含有チェック
+    if !(title ~= "i)CLIP\s*STUDIO\s*PAINT")
+    {
+        return false
+    }
+
+    ; トップレベル & 非最小化
+    mm := WinGetMinMax("ahk_id " hwnd)  ; -1:min, 0:normal, 1:max
+    if (mm = -1)
+    {
+        return false
+    }
+    owner := DllCall("GetWindow", "ptr", hwnd, "uint", 4, "ptr") ; GW_OWNER=4
+    if (owner)
+    {
+        return false
+    }
+
+    ; 標準枠を持ち、ツールウィンドウでない
+    style  := WinGetStyle("ahk_id " hwnd)
+    exstyle := WinGetExStyle("ahk_id " hwnd)
+    ; WS_CAPTION=0x00C00000, WS_EX_TOOLWINDOW=0x00000080
+    if !(style & 0x00C00000)
+    {
+        return false
+    }
+    if (exstyle & 0x00000080)  ; TOOLWINDOW は除外
+    {
+        return false
+    }
+
+    ; 透明オーバーレイの除外
+    ; WS_EX_LAYERED=0x00080000, WS_EX_TRANSPARENT=0x00000020
+    if (exstyle & 0x00080000) 
+    {
+        alpha := GetLayeredAlpha(hwnd)  ; 下の補助関数参照（なければ 255 扱い）
+        if ((exstyle & 0x20) || alpha < 250) ; ほぼ不透明以外を除外（閾値は調整可）
+        {
+            return false
+        }
+    }
+
+    ; サイズの下限と全面オーバーレイ除外
+    WinGetPos(&x,&y,&w,&h, "ahk_id " hwnd)
+    if (w < 400 || h < 300)
+    {
+        return false
+    }
+
+    ; 仮想スクリーン全面の 90% 超を除外（透明全画面オーバーレイ対策）
+    vL := SysGet(76), vT := SysGet(77), vW := SysGet(78), vH := SysGet(79) ; SM_XVIRTUALSCREEN...
+    if (w*h >= 0.90 * vW * vH)
+    {
+        ; ただし最大化中の正規メインを誤排除しないよう、キャプション・不透明・非TRANSPARENTを満たすか再確認
+        if (exstyle & 0x20)  ; TRANSPARENT が立っていたら確実に除外
+        {
+            return false
+        }
+        
+        if (exstyle & 0x00080000) 
+        {
+            alpha := GetLayeredAlpha(hwnd)
+            if (alpha < 250)
+            {
+                return false
+            }
+        }
+
+        ; 上の条件をすべてクリアしていれば「本物の最大化メイン」とみなして通過
+    }
+
+    return true
+
+    ; 旧処理いったんやめ。
+    ; main := GetMainWindowInfo(DEBUG_MODE)
+    ; return (IsObject(main) && main.hwnd = hwnd)
 }
 
 IsWindow(hwnd)
