@@ -650,7 +650,12 @@ IsMainCspWindow(hwnd)
     }
 
     ; タイトルバーの文字列に「CLIP STUDIO PAINT」が含まれるかどうか調べる
-    title := WinGetTitle("ahk_id " hwnd)
+    try title := WinGetTitle("ahk_id " hwnd)
+    catch error
+    {
+        ; 取得するウィンドウが消えていたら対象外
+        return false
+    }
     ; 例: ローカライズを考慮しつつ基本は含有チェック
     if !(title ~= "i)CLIP\s*STUDIO\s*PAINT")
     {
@@ -658,7 +663,12 @@ IsMainCspWindow(hwnd)
     }
 
     ; トップレベル & 非最小化
-    mm := WinGetMinMax("ahk_id " hwnd)  ; -1:min, 0:normal, 1:max
+    try mm := WinGetMinMax("ahk_id " hwnd)  ; -1:min, 0:normal, 1:max
+    catch error
+    {
+        ; 取得するウィンドウが消えていたら対象外
+        return false
+    }
     if (mm = -1)
     {
         return false
@@ -694,7 +704,12 @@ IsMainCspWindow(hwnd)
     }
 
     ; サイズの下限と全面オーバーレイ除外
-    WinGetPos(&x,&y,&w,&h, "ahk_id " hwnd)
+    try WinGetPos(&x,&y,&w,&h, "ahk_id " hwnd)
+    catch error
+    {
+        ; 取得するウィンドウが消えていたら対象外
+        return false
+    }
     if (w < 400 || h < 300)
     {
         return false
